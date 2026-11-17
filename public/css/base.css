@@ -37,10 +37,18 @@ input, select, textarea { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
 :focus-visible { outline: 2px solid var(--laranja); outline-offset: 2px; }
 
-.logo { display: inline-flex; flex-direction: column; line-height: .95; text-decoration: none; }
-.logo b { font-family: var(--fonte-titulo); font-weight: 600; font-size: 1.55rem; color: var(--marinho); letter-spacing: -.01em; }
-.logo small { font-family: var(--fonte-titulo); font-weight: 700; font-size: .6rem; letter-spacing: .12em; color: var(--laranja); margin-left: 2px; }
-.logo.claro b { color: #fff; }
+/* Marca do painel (própria, diferente do logotipo tipográfico da Trilha): folhas do acordo + cláusula em destaque */
+.marca-act { display: inline-flex; align-items: center; gap: .6rem; text-decoration: none; }
+.marca-simbolo { width: 36px; height: 36px; flex: none; }
+.marca-texto { display: flex; flex-direction: column; line-height: 1; }
+.marca-texto b { font: 800 1.2rem var(--fonte-titulo); letter-spacing: -.02em; color: var(--marinho); }
+.marca-texto small { font: 700 .56rem var(--fonte-titulo); letter-spacing: .16em; color: var(--laranja); margin-top: .22rem; }
+.marca-act.claro { --marca-fundo: rgba(255, 255, 255, .12); }
+.marca-act.claro b { color: #fff; }
+.marca-act.claro small { color: var(--laranja-claro); }
+.marca-act.grande .marca-simbolo { width: 46px; height: 46px; }
+.marca-act.grande .marca-texto b { font-size: 1.5rem; }
+.marca-act.grande .marca-texto small { font-size: .64rem; }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
