@@ -72,8 +72,10 @@ function proximaDataBase(u) {
   if (!u.data_base_mes) return null;
   const hoje = dataLocal(E.hoje);
   let d = new Date(hoje.getFullYear(), u.data_base_mes - 1, 1, 12);
-  if (d < hoje) d = new Date(hoje.getFullYear() + 1, u.data_base_mes - 1, 1, 12);
-  return { data: d, dias: dias(hoje, d) };
+  // O mês da data-base em curso ainda conta (a negociação está acontecendo); só depois dele vai para o ano seguinte.
+  if (u.data_base_mes - 1 < hoje.getMonth()) d = new Date(hoje.getFullYear() + 1, u.data_base_mes - 1, 1, 12);
+  const esteMes = d.getFullYear() === hoje.getFullYear() && d.getMonth() === hoje.getMonth();
+  return { data: d, dias: esteMes ? 0 : dias(hoje, d), esteMes };
 }
 
 // ---------- referências às cláusulas ----------
@@ -267,29 +269,97 @@ function cabecalho(sobre, titulo, sub = '', acoes = '') {
 }
 
 // ---------- Panorama ----------
+// Pensado para quem abre pela primeira vez: frases diretas sobre o que pede atenção e uma tabela com as datas por extenso.
+
+const ORDEM_SITUACAO = { vencido: 0, atencao: 1, sem: 2, vigente: 3 };
+
+/** "164 dias" → "5 meses (164 dias)"; até 60 dias, só em dias. */
+function prazo(d) {
+  const n = Math.abs(d);
+  if (n <= 60) return `${n} dia${n === 1 ? '' : 's'}`;
+  const meses = Math.round(n / 30.44);
+  return `${meses} meses (${n} dias)`;
+}
+const mesAnoExtenso = (d) => `${MESES[d.getMonth()]} de ${d.getFullYear()}`;
 
 function telaPanorama() {
-  const sit = E.usinas.map(u => ({ u, s: situacao(u) }));
-  const comPdf = new Set(E.docs.map(d => d.usina_id));
-  const vencendo = sit.filter(x => x.s.cls === 'atencao').length;
-  const vencidos = sit.filter(x => x.s.cls === 'vencido').length;
-  const proximas = E.usinas.map(u => ({ u, p: proximaDataBase(u) })).filter(x => x.p && x.p.dias <= 90);
+  const linhas = E.usinas.map(u => ({ u, s: situacao(u), db: proximaDataBase(u), docs: docsDe(u.id) }))
+    .sort((a, b) => ORDEM_SITUACAO[a.s.cls] - ORDEM_SITUACAO[b.s.cls] || (a.s.dias ?? 9e9) - (b.s.dias ?? 9e9));
+  const conta = (cls) => linhas.filter(l => l.s.cls === cls).length;
+  const semPdf = linhas.filter(l => !l.docs.length);
+
+  // O que precisa de atenção, em frases.
+  const alertas = [];
+  for (const l of linhas) {
+    const link = `#/usina/${l.u.id}`;
+    if (l.s.cls === 'vencido') alertas.push({ cls: 'vencido', texto: `<b>${esc(l.u.nome)}</b>: o acordo venceu em ${fmtData(l.u.vigencia_fim)} (há ${prazo(l.s.dias)}). Confirme se o novo acordo já foi assinado e atualize a vigência.`, link, acao: 'Abrir usina' });
+    else if (l.s.cls === 'atencao') alertas.push({ cls: 'atencao', texto: `<b>${esc(l.u.nome)}</b>: o acordo vence em ${fmtData(l.u.vigencia_fim)} — faltam ${prazo(l.s.dias)}.`, link, acao: 'Abrir usina' });
+    else if (l.s.cls === 'sem') alertas.push({ cls: 'sem', texto: `<b>${esc(l.u.nome)}</b>: as datas de vigência do acordo não foram cadastradas.`, link, acao: 'Abrir usina' });
+    if (l.db && l.db.dias <= 60) alertas.push({ cls: 'atencao', link, acao: 'Abrir usina',
+      texto: l.db.esteMes ? `<b>${esc(l.u.nome)}</b>: a data-base (mês do reajuste anual) é <b>este mês</b> — ${mesAnoExtenso(l.db.data)}.`
+        : `<b>${esc(l.u.nome)}</b>: a data-base (mês do reajuste anual) é em ${mesAnoExtenso(l.db.data)} — faltam ${prazo(l.db.dias)}.` });
+  }
+  if (semPdf.length) {
+    alertas.push({ cls: 'sem', texto: `${semPdf.length === E.usinas.length ? 'Nenhuma usina tem' : `${semPdf.length} usina${semPdf.length > 1 ? 's ainda não têm' : ' ainda não tem'}`} o PDF do acordo enviado${semPdf.length < E.usinas.length ? `: ${semPdf.map(l => esc(l.u.nome)).join(', ')}` : ''}. Sem o PDF, o resumo aparece, mas não dá para abrir as cláusulas.`,
+      link: podeEditar() ? '#/admin/lote' : null, acao: 'Enviar PDFs' });
+  }
 
   vista.innerHTML = `<div class="pagina">
-    ${cabecalho('PANORAMA', 'Acordos coletivos por usina',
-      `${E.usinas.length} usinas · ${E.itens.length} itens no resumo · atualizado em ${new Date(`${E.hoje}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}`,
+    ${cabecalho('PANORAMA', 'Situação dos acordos coletivos',
+      `${E.usinas.length} usinas · posição em ${new Date(`${E.hoje}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}`,
       podeEditar() && E.usinas.length ? '<a class="btn btn-marinho btn-sm" href="#/admin/lote">＋ Enviar acordos em lote</a>' : '')}
     ${E.usinas.length ? '' : vazioInicial()}
+    ${E.usinas.length ? `
     <section class="kpis">
-      ${kpi(E.usinas.length, 'usinas com resumo')}
-      ${kpi(`${comPdf.size}<small>/${E.usinas.length}</small>`, 'com o PDF do acordo', comPdf.size < E.usinas.length ? 'atencao' : '')}
-      ${kpi(vencendo, 'vencem em até 6 meses', vencendo ? 'atencao' : '')}
-      ${kpi(vencidos, vencidos === 1 ? 'acordo vencido' : 'acordos vencidos', vencidos ? 'vencido' : '')}
-      ${kpi(proximas.length, 'datas-base nos próximos 90 dias', proximas.length ? 'atencao' : '')}
+      ${kpi(conta('vigente'), `acordo${conta('vigente') === 1 ? '' : 's'} em vigor`, 'vigente')}
+      ${kpi(conta('atencao'), 'vencem nos próximos 6 meses', conta('atencao') ? 'atencao' : '')}
+      ${kpi(conta('vencido'), conta('vencido') === 1 ? 'acordo vencido' : 'acordos vencidos', conta('vencido') ? 'vencido' : '')}
+      ${kpi(`${E.usinas.length - semPdf.length}<small> de ${E.usinas.length}</small>`, 'usinas com o PDF do acordo enviado', semPdf.length ? 'atencao' : '')}
     </section>
-    ${E.usinas.length ? linhaDoTempo() : ''}
-    <section class="cartoes-usina">${sit.map(({ u, s }) => cartaoUsina(u, s)).join('')}</section>
+
+    <section class="cartao atencao-bloco">
+      <div class="cartao-cab"><h2>${alertas.length ? 'O que precisa de atenção' : 'Tudo em dia'}</h2></div>
+      ${alertas.length ? `<ul class="alertas">${alertas.map(a => `<li class="alerta ${a.cls}"><i></i><p>${a.texto}</p>${a.link ? `<a class="btn btn-claro btn-sm" href="${a.link}">${a.acao} →</a>` : ''}</li>`).join('')}</ul>`
+        : '<p class="fraco">Todos os acordos estão em vigor, com datas cadastradas e PDF enviado.</p>'}
+    </section>
+
+    <section class="cartao">
+      <div class="cartao-cab"><h2>Acordos por usina</h2><span class="fraco">ordenados do mais urgente para o menos urgente · clique para abrir</span></div>
+      <div class="situacao-tabela" role="table" aria-label="Situação dos acordos por usina">
+        <div class="st-linha st-cab" role="row">
+          <span role="columnheader">Usina</span><span role="columnheader">Situação</span><span role="columnheader">Vigência do acordo</span>
+          <span role="columnheader">Próxima data-base</span><span role="columnheader">PDF do acordo</span>
+        </div>
+        ${linhas.map(linhaSituacao).join('')}
+      </div>
+      <dl class="glossario">
+        <div><dt><span class="selo vigente">Vigente</span></dt><dd>o acordo está em vigor e termina daqui a mais de 6 meses.</dd></div>
+        <div><dt><span class="selo atencao">Vence em breve</span></dt><dd>o acordo termina nos próximos 6 meses: hora de preparar a negociação.</dd></div>
+        <div><dt><span class="selo vencido">Vencido</span></dt><dd>a data final já passou. Se o novo acordo já foi assinado, atualize as datas da usina.</dd></div>
+        <div><dt><b>Data-base</b></dt><dd>mês em que o reajuste anual dos salários e benefícios é negociado com o sindicato.</dd></div>
+      </dl>
+    </section>` : ''}
   </div>`;
+}
+
+function linhaSituacao({ u, s, db, docs }) {
+  const ini = dataLocal(u.vigencia_inicio), fim = dataLocal(u.vigencia_fim), hoje = dataLocal(E.hoje);
+  let vig = '<span class="fraco">Datas não cadastradas</span>';
+  if (ini && fim) {
+    const pct = Math.min(100, Math.max(0, ((hoje - ini) / (fim - ini)) * 100));
+    const resta = s.dias < 0 ? `terminou há ${prazo(s.dias)}` : `faltam ${prazo(s.dias)}`;
+    vig = `<span class="st-datas">${fmtData(u.vigencia_inicio)} até ${fmtData(u.vigencia_fim)}</span>
+      <span class="st-barra ${s.cls}" title="${Math.round(pct)}% do período já passou"><i style="width:${pct}%"></i></span>
+      <small class="st-resta ${s.cls}">${resta}</small>`;
+  }
+  const rotulo = { vigente: 'Vigente', atencao: 'Vence em breve', vencido: 'Vencido', sem: 'Sem datas' }[s.cls];
+  return `<a class="st-linha" role="row" href="#/usina/${u.id}">
+    <span role="cell" class="st-usina" data-rotulo="Usina"><b>${esc(u.nome)}</b><small>${esc(u.sindicato || 'Sindicato não informado')}</small></span>
+    <span role="cell" data-rotulo="Situação"><span class="selo ${s.cls}">${rotulo}</span></span>
+    <span role="cell" data-rotulo="Vigência" class="st-vig">${vig}</span>
+    <span role="cell" data-rotulo="Próxima data-base">${db ? `<b class="st-db">${mesAnoExtenso(db.data)}</b><small class="${db.esteMes ? 'st-agora' : 'fraco'}">${db.esteMes ? 'é este mês' : `faltam ${prazo(db.dias)}`}</small>` : '<span class="fraco">Não informada</span>'}</span>
+    <span role="cell" data-rotulo="PDF do acordo">${docs.length ? `<span class="pdf-ok">✓ Enviado</span><small class="fraco">${docs.map(d => d.tipo).join(' + ')}</small>` : '<span class="pdf-falta">Falta enviar</span>'}</span>
+  </a>`;
 }
 
 function vazioInicial() {
@@ -299,56 +369,6 @@ function vazioInicial() {
 }
 
 const kpi = (valor, rotulo, cls = '') => `<div class="kpi ${cls}"><strong>${valor}</strong><span>${rotulo}</span></div>`;
-
-function linhaDoTempo() {
-  const hoje = dataLocal(E.hoje);
-  const anos = E.usinas.flatMap(u => [u.vigencia_inicio, u.vigencia_fim]).filter(Boolean).map(d => Number(d.slice(0, 4)));
-  const a0 = Math.min(hoje.getFullYear(), ...anos), a1 = Math.max(hoje.getFullYear() + 1, ...anos);
-  const meses = (a1 - a0 + 1) * 12;
-  const pos = (d) => (((d.getFullYear() - a0) * 12 + d.getMonth() + (d.getDate() - 1) / 31) / meses) * 100;
-  const anosHtml = Array.from({ length: a1 - a0 + 1 }, (_, i) => `<span style="left:${(i * 12 / meses) * 100}%;width:${(12 / meses) * 100}%">${a0 + i}</span>`).join('');
-  const linhas = E.usinas.map((u) => {
-    const s = situacao(u);
-    const ini = dataLocal(u.vigencia_inicio), fim = dataLocal(u.vigencia_fim);
-    const barra = ini && fim ? `<a class="tl-barra ${s.cls}" href="#/usina/${u.id}" style="left:${pos(ini)}%;width:${Math.max(0.8, pos(fim) - pos(ini) + 100 / meses / 31)}%"
-        title="${esc(u.nome)} · ${fmtData(u.vigencia_inicio)} a ${fmtData(u.vigencia_fim)} · ${s.rotulo}"><span>${fmtMesAno(ini)} – ${fmtMesAno(fim)}</span></a>` : '';
-    const marcos = u.data_base_mes ? Array.from({ length: a1 - a0 + 1 }, (_, i) => {
-      const d = new Date(a0 + i, u.data_base_mes - 1, 1, 12);
-      return `<i class="tl-db${d < hoje ? ' passada' : ''}" style="left:${pos(d)}%" title="Data-base ${MESES[u.data_base_mes - 1]}/${a0 + i}"></i>`;
-    }).join('') : '';
-    return `<div class="tl-linha"><a class="tl-nome" href="#/usina/${u.id}">${esc(u.nome)}<small>${esc(u.sindicato || '')}</small></a>
-      <div class="tl-trilho">${barra}${marcos}</div></div>`;
-  }).join('');
-  return `<section class="cartao linha-tempo">
-    <div class="cartao-cab"><h2>Linha do tempo das vigências</h2>
-      <div class="legenda"><span class="lg vigente">Vigente</span><span class="lg atencao">Vence em até 6 meses</span><span class="lg vencido">Vencido</span><span class="lg db">Data-base</span></div></div>
-    <div class="tl" style="--hoje:${pos(hoje)}%">
-      <div class="tl-linha tl-anos"><span></span><div class="tl-trilho">${anosHtml}</div></div>
-      ${linhas}
-      <div class="tl-hoje-wrap"><span></span><div class="tl-trilho"><i class="tl-hoje"><b>hoje</b></i></div></div>
-    </div></section>`;
-}
-
-function cartaoUsina(u, s) {
-  const docs = docsDe(u.id);
-  const db = proximaDataBase(u);
-  const destaques = E.itens.filter(i => i.destaque).slice(0, 4);
-  return `<a class="cartao-usina" href="#/usina/${u.id}">
-    <div class="cu-topo"><h3>${esc(u.nome)}</h3><span class="selo ${s.cls}">${s.curto}</span></div>
-    <p class="cu-sind">${esc(u.sindicato || 'Sindicato não informado')}</p>
-    <dl class="cu-datas">
-      <div><dt>Vigência</dt><dd>${u.vigencia_inicio ? `${fmtMesAno(dataLocal(u.vigencia_inicio))} – ${fmtMesAno(dataLocal(u.vigencia_fim))}` : '—'}</dd></div>
-      <div><dt>Data-base</dt><dd>${u.data_base_mes ? MESES[u.data_base_mes - 1] : '—'}${db && db.dias <= 90 ? ` <b class="em-breve">em ${db.dias} d</b>` : ''}</dd></div>
-    </dl>
-    <dl class="cu-destaques">${destaques.map(i => {
-      const v = valorDe(u.id, i.id).valor;
-      return `<div><dt>${esc(rotuloCurto(i.nome))}</dt><dd class="${vazio(v) ? 'vazio' : ''}">${esc(v || '—')}</dd></div>`;
-    }).join('')}</dl>
-    <div class="cu-rodape">${docs.length ? `<span class="doc-ok">${docs.length} PDF${docs.length > 1 ? 's' : ''} · ${docs.map(d => d.tipo).join(', ')}</span>` : '<span class="doc-falta">PDF do acordo não enviado</span>'}<span class="seta">→</span></div>
-  </a>`;
-}
-
-const rotuloCurto = (nome) => nome.replace(/\s*[-–(].*$/, '').replace(/^%\s*/, '').trim() || nome;
 
 // ---------- Comparativo ----------
 
@@ -602,7 +622,7 @@ function telaUsina(id, q = {}) {
       </div>
       <dl class="ficha-dados">
         <div><dt>Vigência</dt><dd>${u.vigencia_inicio ? `${fmtData(u.vigencia_inicio)} a ${fmtData(u.vigencia_fim)}` : '—'}</dd></div>
-        <div><dt>Data-base</dt><dd>${u.data_base_mes ? MESES[u.data_base_mes - 1] : '—'}${db ? `<small>próxima em ${fmtMesAno(db.data)} · ${db.dias} dias</small>` : ''}</dd></div>
+        <div><dt>Data-base</dt><dd>${u.data_base_mes ? MESES[u.data_base_mes - 1] : '—'}${db ? `<small>${db.esteMes ? `é este mês (${fmtMesAno(db.data)})` : `próxima em ${fmtMesAno(db.data)} · faltam ${prazo(db.dias)}`}</small>` : ''}</dd></div>
         <div><dt>Situação</dt><dd><span class="selo ${s.cls}">${s.rotulo}</span></dd></div>
       </dl>
       ${podeEditar() ? `<div class="ficha-acoes"><button class="btn btn-claro btn-sm" id="editar-usina">Editar dados</button><button class="btn btn-marinho btn-sm" id="enviar-pdf">＋ Enviar PDF</button></div>` : ''}
