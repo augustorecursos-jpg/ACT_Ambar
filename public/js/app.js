@@ -241,6 +241,11 @@ async function rotear() {
   if (r.tela === 'usina' && anterior?.tela === 'usina' && anterior.id === r.id && E.viz && r.id) {
     return irParaDocumento(r.q);
   }
+  if (r.tela === 'comparativo' && anterior?.tela === 'comparativo' && r.q.item && !r.q.modo && document.getElementById('comp-painel')) {
+    mostrarBeneficio(Number(r.q.item));
+    document.getElementById('comp-painel').scrollIntoView({ block: 'nearest' });
+    return;
+  }
   window.scrollTo(0, 0);
   try {
     if (r.tela === 'panorama') telaPanorama();
@@ -269,98 +274,219 @@ function cabecalho(sobre, titulo, sub = '', acoes = '') {
 }
 
 // ---------- Panorama ----------
-// Pensado para quem abre pela primeira vez: frases diretas sobre o que pede atenção e uma tabela com as datas por extenso.
+// Faixa de resumo (anel de situação + o que pede atenção), agenda dos próximos 12 meses e um cartão por usina
+// com a contagem regressiva do acordo. Situação sempre com ícone + texto, nunca só pela cor.
 
 const ORDEM_SITUACAO = { vencido: 0, atencao: 1, sem: 2, vigente: 3 };
+const ICONE = { vigente: '✓', atencao: '⏳', vencido: '!', sem: '?' };
+const ROTULO_SIT = { vigente: 'Em vigor', atencao: 'Vence em breve', vencido: 'Vencido', sem: 'Sem datas' };
+const COR_SIT = { vigente: '#1f9d57', atencao: '#ec6b24', vencido: '#a61b1b', sem: '#8a98a4' };
 
-/** "164 dias" → "5 meses (164 dias)"; até 60 dias, só em dias. */
+/** 164 → "5 meses"; até 60 dias, em dias. */
 function prazo(d) {
   const n = Math.abs(d);
   if (n <= 60) return `${n} dia${n === 1 ? '' : 's'}`;
   const meses = Math.round(n / 30.44);
-  return `${meses} meses (${n} dias)`;
+  return `${meses} meses`;
 }
 const mesAnoExtenso = (d) => `${MESES[d.getMonth()]} de ${d.getFullYear()}`;
 
+function saudacao() {
+  const h = new Date().getHours();
+  const nome = (E.usuario?.nome || '').split(/\s+/)[0];
+  return `${h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'}${nome && nome !== 'Administrador' ? `, ${esc(nome)}` : ''}`;
+}
+
+function filtroPanorama() { return pref.ler('filtroPanorama', 'todas'); }
+
 function telaPanorama() {
+  if (!E.usinas.length) { vista.innerHTML = `<div class="pagina">${vazioInicial()}</div>`; return; }
   const linhas = E.usinas.map(u => ({ u, s: situacao(u), db: proximaDataBase(u), docs: docsDe(u.id) }))
     .sort((a, b) => ORDEM_SITUACAO[a.s.cls] - ORDEM_SITUACAO[b.s.cls] || (a.s.dias ?? 9e9) - (b.s.dias ?? 9e9));
   const conta = (cls) => linhas.filter(l => l.s.cls === cls).length;
   const semPdf = linhas.filter(l => !l.docs.length);
 
-  // O que precisa de atenção, em frases.
-  const alertas = [];
+  // Pendências, da mais grave para a menos grave.
+  const avisos = [];
   for (const l of linhas) {
     const link = `#/usina/${l.u.id}`;
-    if (l.s.cls === 'vencido') alertas.push({ cls: 'vencido', texto: `<b>${esc(l.u.nome)}</b>: o acordo venceu em ${fmtData(l.u.vigencia_fim)} (há ${prazo(l.s.dias)}). Confirme se o novo acordo já foi assinado e atualize a vigência.`, link, acao: 'Abrir usina' });
-    else if (l.s.cls === 'atencao') alertas.push({ cls: 'atencao', texto: `<b>${esc(l.u.nome)}</b>: o acordo vence em ${fmtData(l.u.vigencia_fim)} — faltam ${prazo(l.s.dias)}.`, link, acao: 'Abrir usina' });
-    else if (l.s.cls === 'sem') alertas.push({ cls: 'sem', texto: `<b>${esc(l.u.nome)}</b>: as datas de vigência do acordo não foram cadastradas.`, link, acao: 'Abrir usina' });
-    if (l.db && l.db.dias <= 60) alertas.push({ cls: 'atencao', link, acao: 'Abrir usina',
-      texto: l.db.esteMes ? `<b>${esc(l.u.nome)}</b>: a data-base (mês do reajuste anual) é <b>este mês</b> — ${mesAnoExtenso(l.db.data)}.`
-        : `<b>${esc(l.u.nome)}</b>: a data-base (mês do reajuste anual) é em ${mesAnoExtenso(l.db.data)} — faltam ${prazo(l.db.dias)}.` });
+    if (l.s.cls === 'vencido') avisos.push({ cls: 'vencido', titulo: l.u.nome, texto: `Acordo vencido há ${prazo(l.s.dias)} (${fmtData(l.u.vigencia_fim)}). Confirme a renovação.`, link });
+    else if (l.s.cls === 'atencao') avisos.push({ cls: 'atencao', titulo: l.u.nome, texto: `O acordo vence em ${prazo(l.s.dias)}, em ${fmtData(l.u.vigencia_fim)}.`, link });
+    else if (l.s.cls === 'sem') avisos.push({ cls: 'sem', titulo: l.u.nome, texto: 'Datas de vigência não cadastradas.', link });
   }
-  if (semPdf.length) {
-    alertas.push({ cls: 'sem', texto: `${semPdf.length === E.usinas.length ? 'Nenhuma usina tem' : `${semPdf.length} usina${semPdf.length > 1 ? 's ainda não têm' : ' ainda não tem'}`} o PDF do acordo enviado${semPdf.length < E.usinas.length ? `: ${semPdf.map(l => esc(l.u.nome)).join(', ')}` : ''}. Sem o PDF, o resumo aparece, mas não dá para abrir as cláusulas.`,
-      link: podeEditar() ? '#/admin/lote' : null, acao: 'Enviar PDFs' });
+  for (const l of linhas) if (l.db && l.db.dias <= 60) {
+    avisos.push({ cls: 'db', titulo: l.u.nome, texto: l.db.esteMes ? `Data-base (reajuste anual) é este mês.` : `Data-base em ${prazo(l.db.dias)}, ${mesAnoExtenso(l.db.data)}.`, link: `#/usina/${l.u.id}` });
   }
+  if (semPdf.length) avisos.push({ cls: 'pdf', titulo: `${semPdf.length} sem PDF`, texto: `${semPdf.map(l => l.u.nome).join(', ')} ainda não têm o acordo em PDF.`, link: podeEditar() ? '#/admin/lote' : null, acao: 'Enviar PDFs' });
 
-  vista.innerHTML = `<div class="pagina">
-    ${cabecalho('PANORAMA', 'Situação dos acordos coletivos',
-      `${E.usinas.length} usinas · posição em ${new Date(`${E.hoje}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}`,
-      podeEditar() && E.usinas.length ? '<a class="btn btn-marinho btn-sm" href="#/admin/lote">＋ Enviar acordos em lote</a>' : '')}
-    ${E.usinas.length ? '' : vazioInicial()}
-    ${E.usinas.length ? `
-    <section class="kpis">
-      ${kpi(conta('vigente'), `acordo${conta('vigente') === 1 ? '' : 's'} em vigor`, 'vigente')}
-      ${kpi(conta('atencao'), 'vencem nos próximos 6 meses', conta('atencao') ? 'atencao' : '')}
-      ${kpi(conta('vencido'), conta('vencido') === 1 ? 'acordo vencido' : 'acordos vencidos', conta('vencido') ? 'vencido' : '')}
-      ${kpi(`${E.usinas.length - semPdf.length}<small> de ${E.usinas.length}</small>`, 'usinas com o PDF do acordo enviado', semPdf.length ? 'atencao' : '')}
-    </section>
-
-    <section class="cartao atencao-bloco">
-      <div class="cartao-cab"><h2>${alertas.length ? 'O que precisa de atenção' : 'Tudo em dia'}</h2></div>
-      ${alertas.length ? `<ul class="alertas">${alertas.map(a => `<li class="alerta ${a.cls}"><i></i><p>${a.texto}</p>${a.link ? `<a class="btn btn-claro btn-sm" href="${a.link}">${a.acao} →</a>` : ''}</li>`).join('')}</ul>`
-        : '<p class="fraco">Todos os acordos estão em vigor, com datas cadastradas e PDF enviado.</p>'}
-    </section>
-
-    <section class="cartao">
-      <div class="cartao-cab"><h2>Acordos por usina</h2><span class="fraco">ordenados do mais urgente para o menos urgente · clique para abrir</span></div>
-      <div class="situacao-tabela" role="table" aria-label="Situação dos acordos por usina">
-        <div class="st-linha st-cab" role="row">
-          <span role="columnheader">Usina</span><span role="columnheader">Situação</span><span role="columnheader">Vigência do acordo</span>
-          <span role="columnheader">Próxima data-base</span><span role="columnheader">PDF do acordo</span>
-        </div>
-        ${linhas.map(linhaSituacao).join('')}
+  const total = linhas.length;
+  vista.innerHTML = `
+  <section class="faixa">
+    <div class="faixa-pontos" aria-hidden="true"></div>
+    <div class="faixa-conteudo">
+      <div class="faixa-texto">
+        <span class="sobre claro">${new Date(`${E.hoje}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</span>
+        <h1>${saudacao()}.</h1>
+        <p>Você acompanha <b>${total} acordos coletivos</b>. ${avisos.filter(a => ['vencido', 'atencao', 'db'].includes(a.cls)).length
+          ? `<b class="destaque">${avisos.filter(a => ['vencido', 'atencao', 'db'].includes(a.cls)).length} ${avisos.filter(a => ['vencido', 'atencao', 'db'].includes(a.cls)).length === 1 ? 'ponto pede' : 'pontos pedem'} atenção</b> agora.` : 'Nada urgente por enquanto.'}</p>
+        ${podeEditar() ? '<a class="btn btn-laranja btn-sm" href="#/admin/lote">＋ Enviar acordos em PDF</a>' : ''}
       </div>
-      <dl class="glossario">
-        <div><dt><span class="selo vigente">Vigente</span></dt><dd>o acordo está em vigor e termina daqui a mais de 6 meses.</dd></div>
-        <div><dt><span class="selo atencao">Vence em breve</span></dt><dd>o acordo termina nos próximos 6 meses: hora de preparar a negociação.</dd></div>
-        <div><dt><span class="selo vencido">Vencido</span></dt><dd>a data final já passou. Se o novo acordo já foi assinado, atualize as datas da usina.</dd></div>
-        <div><dt><b>Data-base</b></dt><dd>mês em que o reajuste anual dos salários e benefícios é negociado com o sindicato.</dd></div>
+      <figure class="anel-situacao" aria-label="Situação dos ${total} acordos">
+        ${anelSituacao(linhas)}
+        <figcaption>
+          ${['vigente', 'atencao', 'vencido', 'sem'].filter(c => conta(c) || c !== 'sem').map(c => `
+            <button class="leg ${c}" data-filtro="${c}"><i>${ICONE[c]}</i><b>${conta(c)}</b><span>${{ vigente: 'em vigor', atencao: 'vencem em até 6 meses', vencido: conta(c) === 1 ? 'vencido' : 'vencidos', sem: 'sem datas' }[c]}</span></button>`).join('')}
+          <button class="leg pdf" data-filtro="sempdf"><i>📄</i><b>${total - semPdf.length}<small>/${total}</small></b><span>com PDF do acordo</span></button>
+        </figcaption>
+      </figure>
+    </div>
+    ${avisos.length ? `<div class="avisos-trilho" role="list" aria-label="O que pede atenção">${avisos.map(a => `
+      <${a.link ? `a href="${a.link}"` : 'div'} class="aviso ${a.cls}" role="listitem">
+        <span class="aviso-ic" aria-hidden="true">${{ vencido: '!', atencao: '⏳', sem: '?', db: '↻', pdf: '📄' }[a.cls]}</span>
+        <span class="aviso-txt"><b>${esc(a.titulo)}</b>${esc(a.texto)}</span>
+        ${a.link ? `<span class="aviso-ir">${a.acao || 'Abrir'} →</span>` : ''}
+      </${a.link ? 'a' : 'div'}>`).join('')}</div>` : ''}
+    <svg class="faixa-onda" viewBox="0 0 1440 60" preserveAspectRatio="none" aria-hidden="true"><path d="M0 60V38C240 6 520 58 820 30S1260 4 1440 22V60Z" fill="var(--fundo)"/><path d="M0 38C240 6 520 58 820 30S1260 4 1440 22" fill="none" stroke="#ec6b24" stroke-width="2"/></svg>
+  </section>
+
+  <div class="pagina pagina-panorama">
+    <section class="bloco">
+      <div class="bloco-cab"><div><h2>Agenda dos próximos 12 meses</h2><p>Vencimentos de acordo e datas-base (mês do reajuste anual), mês a mês.</p></div>
+        <div class="leg-agenda"><span class="ev vence"><i>⏳</i>Vencimento</span><span class="ev db"><i>↻</i>Data-base</span></div></div>
+      ${agenda(linhas)}
+    </section>
+
+    <section class="bloco">
+      <div class="bloco-cab"><div><h2>Usinas</h2><p>Do acordo mais urgente para o menos urgente. Clique para abrir o resumo e o PDF.</p></div>
+        <div class="segmento" role="group" aria-label="Filtrar usinas">
+          ${[['todas', 'Todas'], ['atencao', 'Pedem atenção'], ['vigente', 'Em vigor'], ['sempdf', 'Sem PDF']].map(([k, n]) => `<button data-filtro="${k}" aria-pressed="${filtroPanorama() === k}">${n}</button>`).join('')}
+        </div></div>
+      <div class="grade-usinas" id="grade-usinas">${linhas.map(cartaoUsina).join('')}</div>
+      <p class="sem-cartao" id="sem-cartao" hidden>Nenhuma usina neste filtro.</p>
+    </section>
+
+    <details class="glossario">
+      <summary>O que significa cada situação?</summary>
+      <dl>
+        <div><dt><span class="selo vigente">✓ Em vigor</span></dt><dd>o acordo vale por mais de 6 meses.</dd></div>
+        <div><dt><span class="selo atencao">⏳ Vence em breve</span></dt><dd>termina nos próximos 6 meses: hora de preparar a negociação.</dd></div>
+        <div><dt><span class="selo vencido">! Vencido</span></dt><dd>a data final já passou. Se o novo acordo já foi assinado, atualize as datas da usina.</dd></div>
+        <div><dt><b>↻ Data-base</b></dt><dd>mês em que o reajuste anual de salários e benefícios é negociado com o sindicato.</dd></div>
       </dl>
-    </section>` : ''}
+    </details>
   </div>`;
+
+  const aplicar = (f) => {
+    pref.gravar('filtroPanorama', f);
+    vista.querySelectorAll('.segmento [data-filtro]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.filtro === f)));
+    let n = 0;
+    vista.querySelectorAll('.cartao-u').forEach((c) => {
+      const ok = f === 'todas' || (f === 'atencao' ? ['vencido', 'atencao', 'sem'].includes(c.dataset.sit) : f === 'sempdf' ? c.dataset.pdf === '0' : c.dataset.sit === f);
+      c.hidden = !ok;
+      n += ok ? 1 : 0;
+    });
+    document.getElementById('sem-cartao').hidden = n > 0;
+  };
+  vista.querySelectorAll('[data-filtro]').forEach(b => b.addEventListener('click', () => {
+    const f = b.dataset.filtro;
+    aplicar(['vencido', 'sem'].includes(f) ? 'atencao' : f);
+    if (b.classList.contains('leg')) document.getElementById('grade-usinas').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+  aplicar(filtroPanorama());
 }
 
-function linhaSituacao({ u, s, db, docs }) {
-  const ini = dataLocal(u.vigencia_inicio), fim = dataLocal(u.vigencia_fim), hoje = dataLocal(E.hoje);
-  let vig = '<span class="fraco">Datas não cadastradas</span>';
-  if (ini && fim) {
-    const pct = Math.min(100, Math.max(0, ((hoje - ini) / (fim - ini)) * 100));
-    const resta = s.dias < 0 ? `terminou há ${prazo(s.dias)}` : `faltam ${prazo(s.dias)}`;
-    vig = `<span class="st-datas">${fmtData(u.vigencia_inicio)} até ${fmtData(u.vigencia_fim)}</span>
-      <span class="st-barra ${s.cls}" title="${Math.round(pct)}% do período já passou"><i style="width:${pct}%"></i></span>
-      <small class="st-resta ${s.cls}">${resta}</small>`;
+/** Anel com a proporção de acordos em cada situação (2px de folga entre os arcos). */
+function anelSituacao(linhas) {
+  const r = 54, c = 2 * Math.PI * r, folga = linhas.length > 1 ? 3 : 0;
+  let acum = 0;
+  const arcos = ['vigente', 'atencao', 'vencido', 'sem'].map((cls) => {
+    const n = linhas.filter(l => l.s.cls === cls).length;
+    if (!n) return '';
+    const comp = (n / linhas.length) * c;
+    const arco = `<circle r="${r}" cx="70" cy="70" fill="none" stroke="${COR_SIT[cls]}" stroke-width="14" stroke-linecap="butt"
+      stroke-dasharray="${Math.max(0, comp - folga)} ${c}" stroke-dashoffset="${-acum}" transform="rotate(-90 70 70)"><title>${ROTULO_SIT[cls]}: ${n}</title></circle>`;
+    acum += comp;
+    return arco;
+  }).join('');
+  return `<svg viewBox="0 0 140 140" class="anel" role="img" aria-hidden="true">
+    <circle r="${r}" cx="70" cy="70" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="14"/>${arcos}
+    <text x="70" y="68" text-anchor="middle" class="anel-n">${linhas.length}</text><text x="70" y="88" text-anchor="middle" class="anel-r">acordos</text></svg>`;
+}
+
+/** Agenda: 12 colunas de mês (a partir do atual), com vencimentos e datas-base; acordos já vencidos numa coluna "Atrasados". */
+function agenda(linhas) {
+  const hoje = dataLocal(E.hoje);
+  const meses = Array.from({ length: 12 }, (_, i) => new Date(hoje.getFullYear(), hoje.getMonth() + i, 1, 12));
+  const chave = (d) => `${d.getFullYear()}-${d.getMonth()}`;
+  const eventos = new Map(meses.map(m => [chave(m), []]));
+  const atrasados = [];
+  for (const { u, s } of linhas) {
+    if (u.vigencia_fim) {
+      const fim = dataLocal(u.vigencia_fim);
+      if (s.cls === 'vencido') atrasados.push({ tipo: 'vence', u, txt: `venceu ${fmtData(u.vigencia_fim)}` });
+      else eventos.get(chave(fim))?.push({ tipo: 'vence', u, txt: `vence ${fmtData(u.vigencia_fim)}`, ordem: fim.getDate() });
+    }
+    if (u.data_base_mes) {
+      for (const m of meses) if (m.getMonth() === u.data_base_mes - 1) eventos.get(chave(m)).push({ tipo: 'db', u, txt: 'data-base', ordem: 0 });
+    }
   }
-  const rotulo = { vigente: 'Vigente', atencao: 'Vence em breve', vencido: 'Vencido', sem: 'Sem datas' }[s.cls];
-  return `<a class="st-linha" role="row" href="#/usina/${u.id}">
-    <span role="cell" class="st-usina" data-rotulo="Usina"><b>${esc(u.nome)}</b><small>${esc(u.sindicato || 'Sindicato não informado')}</small></span>
-    <span role="cell" data-rotulo="Situação"><span class="selo ${s.cls}">${rotulo}</span></span>
-    <span role="cell" data-rotulo="Vigência" class="st-vig">${vig}</span>
-    <span role="cell" data-rotulo="Próxima data-base">${db ? `<b class="st-db">${mesAnoExtenso(db.data)}</b><small class="${db.esteMes ? 'st-agora' : 'fraco'}">${db.esteMes ? 'é este mês' : `faltam ${prazo(db.dias)}`}</small>` : '<span class="fraco">Não informada</span>'}</span>
-    <span role="cell" data-rotulo="PDF do acordo">${docs.length ? `<span class="pdf-ok">✓ Enviado</span><small class="fraco">${docs.map(d => d.tipo).join(' + ')}</small>` : '<span class="pdf-falta">Falta enviar</span>'}</span>
+  const pilula = (e) => `<a class="ev ${e.tipo}" href="#/usina/${e.u.id}" title="${esc(e.u.nome)} · ${esc(e.txt)}"><i aria-hidden="true">${e.tipo === 'vence' ? '⏳' : '↻'}</i><span><b>${esc(e.u.nome)}</b><small>${esc(e.txt)}</small></span></a>`;
+  const cartao = (rotulo, sub, lista, cls = '') => `<div class="ag-mes ${cls}"><div class="ag-tit"><b>${rotulo}</b><small>${sub}</small></div>
+    <div class="ag-eventos">${lista.map(pilula).join('')}</div></div>`;
+  // Meses sem nada viram uma faixa única ("dez/2026 – mar/2027: nada previsto").
+  const blocos = [];
+  let vazios = [];
+  const fecharVazios = () => {
+    if (!vazios.length) return;
+    const a = vazios[0], b = vazios[vazios.length - 1];
+    blocos.push(`<div class="ag-vazio"><b>${fmtMesAno(a)}${vazios.length > 1 ? ` – ${fmtMesAno(b)}` : ''}</b><span>nenhum vencimento ou data-base</span></div>`);
+    vazios = [];
+  };
+  if (atrasados.length) blocos.push(cartao('Atrasados', 'acordos que já venceram', atrasados, 'atrasados'));
+  meses.forEach((m, i) => {
+    const lista = eventos.get(chave(m)).sort((a, b) => a.ordem - b.ordem);
+    if (!lista.length) { vazios.push(m); return; }
+    fecharVazios();
+    blocos.push(cartao(`${MESES[m.getMonth()]} de ${m.getFullYear()}`, i === 0 ? 'este mês' : `daqui a ${i} ${i === 1 ? 'mês' : 'meses'}`, lista, i === 0 ? 'atual' : ''));
+  });
+  fecharVazios();
+  return `<div class="agenda">${blocos.join('')}</div>`;
+}
+
+/** Cartão da usina com anel de contagem regressiva (fração do período que ainda falta). */
+function cartaoUsina({ u, s, db, docs }) {
+  const ini = dataLocal(u.vigencia_inicio), fim = dataLocal(u.vigencia_fim), hoje = dataLocal(E.hoje);
+  const resta = ini && fim ? Math.min(1, Math.max(0, (fim - hoje) / (fim - ini))) : 0;
+  const r = 30, c = 2 * Math.PI * r;
+  const centro = !fim ? '<text x="40" y="45" text-anchor="middle" class="cr-n">—</text>'
+    : s.dias < 0 ? '<text x="40" y="38" text-anchor="middle" class="cr-n vencido">!</text><text x="40" y="54" text-anchor="middle" class="cr-r">vencido</text>'
+      : `<text x="40" y="40" text-anchor="middle" class="cr-n">${s.dias > 60 ? Math.round(s.dias / 30.44) : s.dias}</text><text x="40" y="54" text-anchor="middle" class="cr-r">${s.dias > 60 ? 'meses' : 'dias'}</text>`;
+  const destaques = E.itens.filter(i => i.destaque).slice(0, 3);
+  return `<a class="cartao-u ${s.cls}" href="#/usina/${u.id}" data-sit="${s.cls}" data-pdf="${docs.length ? 1 : 0}">
+    <div class="cu-cab">
+      <div><h3>${esc(u.nome)}</h3><p>${esc(u.sindicato || 'Sindicato não informado')}</p></div>
+      <span class="selo ${s.cls}">${ICONE[s.cls]} ${ROTULO_SIT[s.cls]}</span>
+    </div>
+    <div class="cu-meio">
+      <svg viewBox="0 0 80 80" class="contagem" role="img" aria-label="${s.dias < 0 ? 'Acordo vencido' : fim ? `Faltam ${prazo(s.dias)} para o fim do acordo` : 'Sem datas'}">
+        <circle r="${r}" cx="40" cy="40" fill="none" stroke="var(--fundo-2)" stroke-width="7"/>
+        ${resta > 0 ? `<circle r="${r}" cx="40" cy="40" fill="none" stroke="${COR_SIT[s.cls]}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${resta * c} ${c}" transform="rotate(-90 40 40)"/>` : ''}
+        ${centro}
+      </svg>
+      <dl>
+        <div><dt>Vigência</dt><dd>${fim ? `${fmtMesAno(ini)} → ${fmtMesAno(fim)}` : 'não cadastrada'}</dd></div>
+        <div><dt>Próxima data-base</dt><dd>${db ? (db.esteMes ? '<b class="agora">este mês</b>' : `${MESES[db.data.getMonth()]}/${db.data.getFullYear()}`) : '—'}</dd></div>
+        <div><dt>Acordo em PDF</dt><dd>${docs.length ? `<span class="ok">✓ ${docs.map(d => d.tipo).join(' + ')}</span>` : '<span class="falta">falta enviar</span>'}</dd></div>
+      </dl>
+    </div>
+    ${destaques.length ? `<div class="cu-destaques">${destaques.map(i => {
+      const v = valorDe(u.id, i.id).valor;
+      return `<div><span>${esc(rotuloCurto(i.nome))}</span><b class="${vazio(v) ? 'vazio' : ''}">${esc(vazio(v) ? '—' : v)}</b></div>`;
+    }).join('')}</div>` : ''}
   </a>`;
 }
+
+const rotuloCurto = (nome) => nome.replace(/\s*[-–(].*$/, '').replace(/^%\s*/, '').trim() || nome;
 
 function vazioInicial() {
   return `<div class="vazio-inicial"><h2>Comece importando a planilha de resumo</h2>
@@ -368,11 +494,154 @@ function vazioInicial() {
     ${podeEditar() ? '<a class="btn btn-laranja" href="#/admin/importar">Importar planilha</a>' : '<p>Peça a um editor para importar a planilha.</p>'}</div>`;
 }
 
-const kpi = (valor, rotulo, cls = '') => `<div class="kpi ${cls}"><strong>${valor}</strong><span>${rotulo}</span></div>`;
-
 // ---------- Comparativo ----------
+// Dois modos: "Por benefício" (um item por vez, com ranking ou agrupamento) e "Tabela completa" (matriz).
+
+function cabComparativo(modo) {
+  return `<div class="cab-tela cab-comp"><div><span class="sobre">COMPARATIVO</span><h1>Compare os benefícios entre as usinas</h1></div>
+    <div class="cab-acoes">
+      <div class="segmento" role="group" aria-label="Modo de visualização">
+        <a href="#/comparativo?modo=beneficio" aria-pressed="${modo === 'beneficio'}">◧ Por benefício</a>
+        <a href="#/comparativo?modo=tabela" aria-pressed="${modo === 'tabela'}">▦ Tabela completa</a>
+      </div>
+      <button class="btn btn-claro btn-sm" id="exportar">⬇ Excel</button>
+    </div></div>`;
+}
 
 function telaComparativo(q = {}) {
+  if (!E.usinas.length) { vista.innerHTML = `<div class="pagina">${vazioInicial()}</div>`; return; }
+  if (q.modo) pref.gravar('modoComparativo', q.modo);
+  const modo = q.modo || pref.ler('modoComparativo', 'beneficio');
+  if (modo === 'tabela') return telaTabela(q);
+  return telaBeneficio(q);
+}
+
+/** Analisa um item entre as usinas: numérico (ranking) quando 3+ valores têm a mesma unidade (R$ ou %); senão, agrupa por resposta. */
+function analisarItem(i) {
+  const linhas = E.usinas.map(u => ({ u, v: valorDe(u.id, i.id) }));
+  const nums = linhas.map(l => ({ ...l, n: numero(l.v.valor) }));
+  const un = ['R$', '%'].find(x => nums.filter(l => l.n?.un === x).length >= 3);
+  if (un) {
+    const comNum = nums.filter(l => l.n?.un === un).sort((a, b) => b.n.n - a.n.n);
+    const outros = nums.filter(l => l.n?.un !== un);
+    const valores = comNum.map(l => l.n.n);
+    const media = valores.reduce((s, x) => s + x, 0) / valores.length;
+    return { tipo: 'num', un, comNum, outros, max: comNum[0], min: comNum[comNum.length - 1], media };
+  }
+  const grupos = new Map();
+  for (const l of linhas) {
+    const k = vazio(l.v.valor) ? '__vazio' : Clausulas.normalizar(l.v.valor).replace(/\s+/g, ' ').trim();
+    if (!grupos.has(k)) grupos.set(k, { rotulo: vazio(l.v.valor) ? 'Não previsto / sem informação' : l.v.valor, vazio: k === '__vazio', linhas: [] });
+    grupos.get(k).linhas.push(l);
+  }
+  return { tipo: 'cat', grupos: [...grupos.values()].sort((a, b) => a.vazio - b.vazio || b.linhas.length - a.linhas.length) };
+}
+
+const fmtNumero = (n, un) => (un === 'R$' ? `R$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${n.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`);
+
+function resumoItem(i) {
+  const a = analisarItem(i);
+  if (a.tipo === 'num') return a.max.n.n === a.min.n.n ? 'igual em todas' : `${fmtNumero(a.min.n.n, a.un)} a ${fmtNumero(a.max.n.n, a.un)}`;
+  const reais = a.grupos.filter(g => !g.vazio);
+  const com = reais.reduce((n, g) => n + g.linhas.length, 0);
+  if (!reais.length) return 'nenhuma usina prevê';
+  if (reais.length === 1) return com === E.usinas.length ? 'igual em todas' : `só em ${com} de ${E.usinas.length} usinas`;
+  return `${reais.length} respostas diferentes`;
+}
+
+function telaBeneficio(q = {}) {
+  const itemAtual = item(q.item) || item(pref.ler('itemComparativo', 0)) || E.itens[0];
+  vista.innerHTML = `<div class="pagina pagina-larga">
+    ${cabComparativo('beneficio')}
+    <div class="comp">
+      <aside class="comp-lista" aria-label="Benefícios">
+        <input class="campo campo-filtro" id="comp-filtro" type="search" placeholder="Buscar benefício…" aria-label="Buscar benefício">
+        <nav id="comp-nav">${categorias().map(c => `<div class="cg" data-cat="${esc(c.nome)}"><h3>${esc(c.nome)}</h3>
+          ${c.itens.map(i => `<a href="#/comparativo?item=${i.id}" data-item="${i.id}" data-busca="${esc(i.nome)}"><span>${esc(i.nome)}</span><small>${esc(resumoItem(i))}</small></a>`).join('')}</div>`).join('')}</nav>
+      </aside>
+      <section class="comp-painel" id="comp-painel" aria-live="polite"></section>
+    </div>
+  </div>`;
+  document.getElementById('exportar').addEventListener('click', exportarExcel);
+  document.getElementById('comp-filtro').addEventListener('input', (e) => {
+    const t = Clausulas.normalizar(e.target.value.trim());
+    vista.querySelectorAll('#comp-nav a').forEach(a => a.hidden = !!t && !Clausulas.normalizar(a.dataset.busca).includes(t));
+    vista.querySelectorAll('.cg').forEach(g => g.hidden = !g.querySelector('a:not([hidden])'));
+  });
+  mostrarBeneficio(itemAtual.id);
+}
+
+function mostrarBeneficio(itemId) {
+  const i = item(itemId);
+  const painel = document.getElementById('comp-painel');
+  if (!i || !painel) return;
+  pref.gravar('itemComparativo', i.id);
+  vista.querySelectorAll('#comp-nav a').forEach(a => {
+    const on = Number(a.dataset.item) === i.id;
+    a.classList.toggle('ativo', on);
+    if (on) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current');
+  });
+  const ordem = categorias().flatMap(c => c.itens);
+  const pos = ordem.findIndex(x => x.id === i.id);
+  const ant = ordem[pos - 1], prox = ordem[pos + 1];
+  const a = analisarItem(i);
+  const informam = E.usinas.filter(u => !vazio(valorDe(u.id, i.id).valor)).length;
+
+  const refsDe = (u) => {
+    const v = valorDe(u.id, i.id);
+    const refs = resolverRefs(u.id, v.nota);
+    return refs.length ? refs.map(r => chipRef(r, u.id)).join('') : (v.nota ? '<span class="chip-ref obs" title="Tem observação">obs.</span>' : '');
+  };
+
+  let corpo;
+  if (a.tipo === 'num') {
+    const iguais = a.max.n.n === a.min.n.n;
+    corpo = `
+      <div class="stats">
+        <div class="stat"><span>Maior</span><b>${fmtNumero(a.max.n.n, a.un)}</b><small>${esc(a.max.u.nome)}</small></div>
+        <div class="stat"><span>Menor</span><b>${fmtNumero(a.min.n.n, a.un)}</b><small>${esc(a.min.u.nome)}</small></div>
+        <div class="stat"><span>Média</span><b>${fmtNumero(a.media, a.un)}</b><small>entre ${a.comNum.length} usinas com valor</small></div>
+        ${!iguais ? `<div class="stat"><span>Diferença</span><b>${a.un === 'R$' ? fmtNumero(a.max.n.n - a.min.n.n, a.un) : `${(a.max.n.n - a.min.n.n).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} p.p.`}</b><small>entre a maior e a menor</small></div>` : ''}
+      </div>
+      <h3 class="sub-h">Ranking das usinas</h3>
+      <ol class="ranking">${a.comNum.map((l, k) => `
+        <li><button class="rk" data-u="${l.u.id}" title="Ver detalhes de ${esc(l.u.nome)}">
+          <span class="rk-pos">${k + 1}º</span>
+          <span class="rk-nome">${esc(l.u.nome)}</span>
+          <span class="rk-trilho"><i class="${l === a.max && !iguais ? 'max' : ''}" style="width:${Math.max(2, (l.n.n / a.max.n.n) * 100)}%"></i></span>
+          <span class="rk-valor">${esc(l.v.valor)}</span>
+        </button><span class="rk-refs">${refsDe(l.u)}</span></li>`).join('')}</ol>
+      <p class="media-nota">Barra laranja: maior valor. ${a.comNum.length} de ${E.usinas.length} usinas têm valor em ${a.un}.</p>
+      ${a.outros.length ? `<h3 class="sub-h">Sem valor em ${a.un}</h3>
+        <ul class="outros">${a.outros.map(l => `<li><button class="rk-outro" data-u="${l.u.id}"><span>${esc(l.u.nome)}</span><b class="${vazio(l.v.valor) ? 'vazio' : ''}">${esc(vazio(l.v.valor) ? 'Não previsto' : l.v.valor)}</b></button><span class="rk-refs">${refsDe(l.u)}</span></li>`).join('')}</ul>` : ''}`;
+  } else {
+    const maior = Math.max(...a.grupos.filter(g => !g.vazio).map(g => g.linhas.length), 1);
+    corpo = `
+      <div class="grupos">${a.grupos.map(g => `
+        <div class="grupo-resp ${g.vazio ? 'vazio' : ''}">
+          <div class="gr-cab"><b>${esc(g.rotulo)}</b><span class="gr-n">${g.linhas.length} de ${E.usinas.length}</span></div>
+          ${g.vazio ? '' : `<span class="gr-barra"><i style="width:${(g.linhas.length / maior) * 100}%"></i></span>`}
+          <ul>${g.linhas.map(l => `<li><button data-u="${l.u.id}">${esc(l.u.nome)}</button>${refsDe(l.u)}</li>`).join('')}</ul>
+        </div>`).join('')}</div>`;
+  }
+
+  painel.innerHTML = `
+    <div class="cp-cab">
+      <div><span class="sobre">${esc(i.categoria)}</span><h2>${esc(i.nome)}</h2>
+        <p>${a.tipo === 'num' ? (a.max.n.n === a.min.n.n ? `Mesmo valor em todas as usinas que informam: <b>${fmtNumero(a.max.n.n, a.un)}</b>.` : `Varia de <b>${fmtNumero(a.min.n.n, a.un)}</b> (${esc(a.min.u.nome)}) a <b>${fmtNumero(a.max.n.n, a.un)}</b> (${esc(a.max.u.nome)}).`)
+          : `${informam} de ${E.usinas.length} usinas preveem este item${a.grupos.filter(g => !g.vazio).length > 1 ? `, com ${a.grupos.filter(g => !g.vazio).length} respostas diferentes` : ''}.`}</p></div>
+      <div class="cp-nav">
+        ${ant ? `<a class="btn btn-claro btn-sm" href="#/comparativo?item=${ant.id}" title="${esc(ant.nome)}">← Anterior</a>` : ''}
+        ${prox ? `<a class="btn btn-claro btn-sm" href="#/comparativo?item=${prox.id}" title="${esc(prox.nome)}">Próximo →</a>` : ''}
+      </div>
+    </div>
+    ${corpo}
+    <p class="cp-dica">Clique numa usina para ver a anotação, o histórico${podeEditar() ? ' e editar o valor' : ''}. Os selos “Cl.” abrem o PDF na cláusula.</p>`;
+  painel.querySelectorAll('[data-u]').forEach(b => b.addEventListener('click', () => abrirGaveta(Number(b.dataset.u), i.id)));
+}
+
+function telaTabela(q = {}) {
+
   const ocultas = new Set(pref.ler('colunasOcultas', []));
   const usinas = E.usinas.filter(u => !ocultas.has(u.id));
   const fechadas = new Set(pref.ler('gruposFechados', []));
@@ -380,8 +649,7 @@ function telaComparativo(q = {}) {
   const opc = { diferencas: pref.ler('soDiferencas', false), notas: pref.ler('mostrarNotas', false) };
 
   vista.innerHTML = `<div class="pagina pagina-larga">
-    ${cabecalho('COMPARATIVO', 'Benefícios lado a lado', 'Clique em um valor para ver a cláusula de origem, o histórico e, se tiver permissão, editar.',
-      `<button class="btn btn-claro btn-sm" id="exportar">⬇ Exportar Excel</button>`)}
+    ${cabComparativo('tabela')}
     <div class="barra-ferramentas">
       <input class="campo campo-filtro" id="filtro-itens" type="search" placeholder="Filtrar itens (ex.: creche, PLR)" value="${esc(filtro)}">
       <label class="alternar"><input type="checkbox" id="so-dif" ${opc.diferencas ? 'checked' : ''}><span></span>Só onde há diferença</label>
@@ -429,7 +697,7 @@ function telaComparativo(q = {}) {
     ocultas.has(id) ? ocultas.delete(id) : ocultas.add(id);
     if (ocultas.size === E.usinas.length) { ocultas.delete(id); return toast('Deixe pelo menos uma usina visível.'); }
     pref.gravar('colunasOcultas', [...ocultas]);
-    telaComparativo();
+    telaTabela();
   }));
   vista.querySelectorAll('.grupo-botao').forEach(b => b.addEventListener('click', () => {
     const tr = b.closest('tr');
@@ -589,6 +857,7 @@ async function abrirGaveta(usinaId, itemId) {
 function redesenharCelula(usinaId, itemId) {
   const r = E.rotaAtual;
   if (r?.tela === 'comparativo') {
+    if (document.getElementById('comp-painel')) { mostrarBeneficio(itemId); return; }
     const tr = vista.querySelector(`tr.linha[data-item="${itemId}"]`);
     if (!tr) return;
     const ocultas = new Set(pref.ler('colunasOcultas', []));
