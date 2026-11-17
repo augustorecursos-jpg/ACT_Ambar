@@ -427,6 +427,20 @@ a.chip-ref:hover small { color: #c9dae7; }
 .soltar span { font-size: .8rem; color: var(--texto-suave); }
 .soltar em { font-style: normal; font-weight: 700; font-size: .84rem; color: var(--laranja); }
 
+/* envio em lote */
+.tabela-lote td { vertical-align: top; }
+.tabela-lote td small { margin-top: .25rem; }
+.tabela-lote select { min-width: 160px; }
+.tabela-lote input { width: 120px; }
+.tabela-lote select.falta { border-color: var(--vermelho); background: var(--vermelho-suave); }
+.tabela-lote tr.lote-ok td { background: #f6fbf8; }
+.lote-estado { white-space: nowrap; font-size: .84rem; }
+.lote-estado .ok { color: var(--verde); font-weight: 800; }
+.lote-acoes { display: flex; align-items: center; justify-content: flex-end; gap: .7rem; margin-top: 1rem; flex-wrap: wrap; }
+.lote-acoes .fraco { margin-right: auto; }
+.girando { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--linha-forte); border-top-color: var(--laranja); border-radius: 50%; animation: girar .8s linear infinite; vertical-align: -2px; }
+@keyframes girar { to { transform: rotate(360deg); } }
+
 /* ---------- modais ---------- */
 .modal { border: 0; border-radius: 16px; padding: 0; width: min(520px, calc(100vw - 32px)); box-shadow: var(--sombra-forte); }
 .modal::backdrop { background: rgba(10, 44, 69, .45); }

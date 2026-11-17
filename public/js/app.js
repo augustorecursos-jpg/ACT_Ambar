@@ -277,7 +277,8 @@ function telaPanorama() {
 
   vista.innerHTML = `<div class="pagina">
     ${cabecalho('PANORAMA', 'Acordos coletivos por usina',
-      `${E.usinas.length} usinas · ${E.itens.length} itens no resumo · atualizado em ${new Date(`${E.hoje}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}`)}
+      `${E.usinas.length} usinas · ${E.itens.length} itens no resumo · atualizado em ${new Date(`${E.hoje}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}`,
+      podeEditar() && E.usinas.length ? '<a class="btn btn-marinho btn-sm" href="#/admin/lote">＋ Enviar acordos em lote</a>' : '')}
     ${E.usinas.length ? '' : vazioInicial()}
     <section class="kpis">
       ${kpi(E.usinas.length, 'usinas com resumo')}
@@ -831,5 +832,5 @@ async function iniciar() {
   rotear();
 }
 
-window.App = { E, atualizar, usina, item, valorDe, docsDe, podeEditar, ehAdmin, categorias, cabecalho, MESES, fmtData, situacao, pref, ORDEM_CATEGORIAS };
+window.App = { E, atualizar, carregarDados, usina, item, valorDe, docsDe, podeEditar, ehAdmin, categorias, cabecalho, MESES, fmtData, situacao, pref, ORDEM_CATEGORIAS };
 iniciar();

@@ -44,6 +44,10 @@ erradas por IP a cada 15 minutos; sessão de 10 horas.
   da coluna B), itens nas linhas, linhas `SINDICATOS`, `MÊS DATA BASE` e `VALIDADE - ANO` viram dados da usina, e os
   **comentários das células** viram as anotações. A planilha é lida no navegador e mostra uma prévia antes de gravar.
   Usinas e itens são reconhecidos pelo nome; reimportar atualiza os valores (com histórico) e não mexe nos PDFs.
+- **Vários PDFs de uma vez** (Administração → Enviar acordos em lote, ou o botão no Panorama): arraste todos os PDFs;
+  a usina é sugerida pelo nome do arquivo (tolera nomes truncados, como "Cuiab_" ou "Goi_nia") ou, se o nome não
+  ajudar, pelo texto da 1ª página; tipo e vigência também são sugeridos pelo nome. Confira, ajuste e envie — o andamento
+  aparece em cada linha.
 - **PDFs** (tela da usina → Enviar PDF): tipo ACT, Termo Aditivo ou Outro. Ao enviar, o texto de cada página é extraído
   para a busca e os títulos das cláusulas são indexados. Referências como "ADITIVO CLÁUSULA SEGUNDA" apontam para o
   PDF do tipo Aditivo; enquanto ele não for enviado, o atalho aparece como pendente. PDFs digitalizados sem texto

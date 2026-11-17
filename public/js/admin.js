@@ -1,6 +1,6 @@
 // Administração: usuários (só administradores), estrutura do resumo, importação da planilha, histórico,
 // e os diálogos de usina e de PDF usados também na tela da usina.
-/* global App, Planilha, XLSX */
+/* global App, Planilha, XLSX, Clausulas, carregarPdfjs */
 (function () {
   const vista = document.getElementById('vista');
   const modal = document.getElementById('modal');
@@ -22,7 +22,7 @@
   function abas(atual) {
     const lista = [
       ...(App.ehAdmin() ? [['usuarios', 'Usuários']] : []),
-      ['estrutura', 'Usinas e itens'], ['importar', 'Importar planilha'], ['historico', 'Histórico'],
+      ['estrutura', 'Usinas e itens'], ['importar', 'Importar planilha'], ['lote', 'Enviar acordos em lote'], ['historico', 'Histórico'],
     ];
     return `<nav class="sub-abas">${lista.map(([id, nome]) => `<a href="#/admin/${id}" class="${id === atual ? 'ativa' : ''}">${nome}</a>`).join('')}</nav>`;
   }
@@ -31,9 +31,9 @@
     if (!App.podeEditar()) { location.hash = '#/panorama'; return; }
     sub = sub || (App.ehAdmin() ? 'usuarios' : 'estrutura');
     if (sub === 'usuarios' && !App.ehAdmin()) sub = 'estrutura';
-    const titulos = { usuarios: 'Usuários do RH', estrutura: 'Usinas e itens do resumo', importar: 'Importar planilha de resumo', historico: 'Histórico de alterações' };
+    const titulos = { usuarios: 'Usuários do RH', estrutura: 'Usinas e itens do resumo', importar: 'Importar planilha de resumo', lote: 'Enviar acordos em lote', historico: 'Histórico de alterações' };
     vista.innerHTML = `<div class="pagina">${App.cabecalho(App.ehAdmin() ? 'ADMINISTRAÇÃO' : 'ESTRUTURA', titulos[sub] || '')}${abas(sub)}<div id="admin-corpo"></div></div>`;
-    ({ usuarios: telaUsuarios, estrutura: telaEstrutura, importar: telaImportar, historico: telaHistorico }[sub] || telaEstrutura)();
+    ({ usuarios: telaUsuarios, estrutura: telaEstrutura, importar: telaImportar, lote: telaLote, historico: telaHistorico }[sub] || telaEstrutura)();
   }
 
   // ---------- usuários ----------
@@ -346,6 +346,156 @@
         previa.innerHTML = `<p class="erro-tela">Não foi possível ler a planilha: ${esc(err.message)}</p>`;
       }
     });
+  }
+
+
+  // ---------- envio de vários PDFs de uma vez ----------
+
+  const letras = (t) => Clausulas.normalizar(t).replace(/[^A-Z0-9]/g, '');
+  /** Distância de edição (Levenshtein) — para nomes truncados como "Cuiab_" ou "Goi_nia". */
+  function distancia(a, b) {
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+    for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    return d[a.length][b.length];
+  }
+  /** Quão bem o nome da usina aparece no texto (0 = não aparece). Tolera 1 letra trocada/faltando (2 em nomes longos). */
+  function pontuar(texto, nome) {
+    const alvo = letras(nome).replace(/^AMBAR/, '');
+    const base = letras(texto);
+    if (alvo.length < 3) return 0;
+    if (base.includes(alvo)) return 3;
+    // Também tenta só a 1ª palavra do nome ("Sta Cruz/RJ" → "STA"? não: só palavras com 4+ letras).
+    const partes = [alvo, ...Clausulas.normalizar(nome).split(/[^A-Z]+/).filter(p => p.length >= 5 && p !== 'AMBAR')];
+    let melhor = 0;
+    for (const p of partes) {
+      const tol = p.length >= 8 ? 2 : 1;
+      if (p.length < 5) continue;
+      for (let L = p.length - tol; L <= p.length + tol; L++) {
+        for (let i = 0; i + L <= base.length; i++) {
+          if (distancia(base.slice(i, i + L), p) <= tol) { melhor = Math.max(melhor, p === alvo ? 2 : 1); break; }
+        }
+      }
+    }
+    return melhor;
+  }
+  function adivinharUsina(texto) {
+    const notas = App.E.usinas.map(u => ({ u, n: Math.max(pontuar(texto, u.nome), u.nome_planilha ? pontuar(texto, u.nome_planilha) : 0) }))
+      .filter(x => x.n > 0).sort((a, b) => b.n - a.n);
+    if (!notas.length || (notas[1] && notas[1].n === notas[0].n)) return null; // nenhuma ou empate: a pessoa escolhe
+    return notas[0].u.id;
+  }
+  async function textoInicial(arquivo) {
+    try {
+      const lib = await carregarPdfjs();
+      const doc = await lib.getDocument({ data: new Uint8Array(await arquivo.arrayBuffer()), isEvalSupported: false }).promise;
+      let t = '';
+      for (let n = 1; n <= Math.min(2, doc.numPages); n++) t += (await (await doc.getPage(n)).getTextContent()).items.map(i => i.str).join(' ') + ' ';
+      doc.destroy();
+      return t;
+    } catch { return ''; }
+  }
+
+  function telaLote() {
+    const corpo = document.getElementById('admin-corpo');
+    let linhas = [];
+    corpo.innerHTML = `<section class="cartao importar">
+      <div class="passos">
+        <div><b>1</b><span>Selecione ou arraste todos os PDFs de uma vez (até 40 MB cada).</span></div>
+        <div><b>2</b><span>A usina, o tipo e a vigência são sugeridos pelo nome do arquivo ou pela 1ª página do PDF. Confira e ajuste.</span></div>
+        <div><b>3</b><span>Envie. Cada PDF é lido para a busca e para os atalhos das cláusulas; o andamento aparece em cada linha.</span></div>
+      </div>
+      <label class="soltar" id="soltar-lote"><input type="file" id="arq-lote" accept="application/pdf,.pdf" multiple>
+        <strong>Escolher PDFs</strong><span>ou arraste os arquivos para cá</span></label>
+      <div id="lote"></div>
+    </section>`;
+    const input = corpo.querySelector('#arq-lote');
+    const zona = corpo.querySelector('#soltar-lote');
+    ['dragover', 'dragenter'].forEach(ev => zona.addEventListener(ev, (e) => { e.preventDefault(); zona.classList.add('sobre'); }));
+    ['dragleave', 'drop'].forEach(ev => zona.addEventListener(ev, () => zona.classList.remove('sobre')));
+    zona.addEventListener('drop', (e) => { e.preventDefault(); adicionar([...e.dataTransfer.files]); });
+    input.addEventListener('change', () => { adicionar([...input.files]); input.value = ''; });
+
+    async function adicionar(arquivos) {
+      const pdfs = arquivos.filter(f => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
+      if (pdfs.length < arquivos.length) toast(`${arquivos.length - pdfs.length} arquivo(s) ignorado(s): só PDF.`, 'erro');
+      for (const f of pdfs) {
+        if (linhas.some(l => l.arquivo.name === f.name && l.arquivo.size === f.size)) continue;
+        const vig = f.name.match(/(20\d{2})\s*[-–_ ]\s*(20\d{2})/);
+        const tipo = /aditivo/i.test(f.name) ? 'Aditivo' : 'ACT';
+        linhas.push({ arquivo: f, usina: adivinharUsina(f.name), origem: 'nome', tipo, vigencia: vig ? `${vig[1]}-${vig[2]}` : '', estado: 'pronto' });
+      }
+      desenhar();
+      // Sem pista no nome do arquivo: tenta pelo texto da 1ª página.
+      for (const l of linhas.filter(x => !x.usina && x.origem === 'nome')) {
+        l.origem = 'texto';
+        l.usina = adivinharUsina(await textoInicial(l.arquivo));
+        desenhar();
+      }
+    }
+
+    function desenhar() {
+      const alvo = corpo.querySelector('#lote');
+      if (!linhas.length) { alvo.innerHTML = ''; return; }
+      const enviando = linhas.some(l => l.estado === 'enviando');
+      const prontos = linhas.filter(l => l.estado === 'pronto');
+      const semUsina = prontos.filter(l => !l.usina).length;
+      alvo.innerHTML = `<div class="tabela-rolagem"><table class="tabela tabela-lote">
+        <thead><tr><th>Arquivo</th><th>Usina</th><th>Tipo</th><th>Vigência</th><th>Situação</th><th></th></tr></thead>
+        <tbody>${linhas.map((l, i) => {
+          const bloq = l.estado !== 'pronto' && l.estado !== 'erro';
+          const jaTem = l.usina ? App.docsDe(l.usina).length : 0;
+          return `<tr data-i="${i}" class="lote-${l.estado}">
+          <td><strong>${esc(l.arquivo.name)}</strong><small>${(l.arquivo.size / 1048576).toFixed(1)} MB</small></td>
+          <td><select class="campo campo-sm ${l.usina ? '' : 'falta'}" data-campo="usina" ${bloq ? 'disabled' : ''}>
+            <option value="">— escolha —</option>${App.E.usinas.map(u => `<option value="${u.id}" ${u.id === l.usina ? 'selected' : ''}>${esc(u.nome)}</option>`).join('')}</select>
+            ${l.usina && l.estado === 'pronto' ? `<small>${l.origem === 'texto' ? 'sugerida pelo texto do PDF' : 'sugerida pelo nome do arquivo'}${jaTem ? ` · já tem ${jaTem} PDF` : ''}</small>` : ''}</td>
+          <td><select class="campo campo-sm" data-campo="tipo" ${bloq ? 'disabled' : ''}>${['ACT', 'Aditivo', 'Outro'].map(t => `<option ${t === l.tipo ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
+          <td><input class="campo campo-sm" data-campo="vigencia" value="${esc(l.vigencia)}" placeholder="2026-2028" maxlength="40" ${bloq ? 'disabled' : ''}></td>
+          <td class="lote-estado">${{ pronto: '<span class="fraco">pronto para enviar</span>', enviando: '<span class="girando"></span> lendo o PDF…',
+            ok: `<span class="ok">✓ enviado</span><small>${l.res ? `${l.res.paginas} págs. · ${l.res.clausulas} cláusulas${l.res.paginas_com_texto ? '' : ' · sem texto (digitalizado)'}` : ''}</small>`,
+            erro: `<span class="perigo">✕ ${esc(l.erro || 'erro')}</span>` }[l.estado]}</td>
+          <td>${bloq ? '' : `<button class="btn btn-fantasma btn-sm" data-tirar="${i}" aria-label="Tirar da lista">✕</button>`}</td></tr>`;
+        }).join('')}</tbody></table></div>
+        <div class="lote-acoes">
+          <span class="fraco">${linhas.length} arquivo(s)${semUsina ? ` · <b class="perigo">${semUsina} sem usina</b>` : ''}</span>
+          ${linhas.some(l => l.estado === 'ok') && !enviando ? '<a class="btn btn-claro" href="#/panorama">Ver Panorama</a>' : ''}
+          <button class="btn btn-laranja" id="enviar-lote" ${enviando || !prontos.length || semUsina ? 'disabled' : ''}>
+            ${enviando ? 'Enviando…' : `Enviar ${prontos.length} PDF${prontos.length === 1 ? '' : 's'}`}</button>
+        </div>`;
+      alvo.querySelectorAll('[data-campo]').forEach(el => el.addEventListener('change', () => {
+        const l = linhas[Number(el.closest('tr').dataset.i)];
+        l[el.dataset.campo] = el.dataset.campo === 'usina' ? (Number(el.value) || null) : el.value;
+        if (l.estado === 'erro') l.estado = 'pronto';
+        desenhar();
+      }));
+      alvo.querySelectorAll('[data-tirar]').forEach(b => b.addEventListener('click', () => { linhas.splice(Number(b.dataset.tirar), 1); desenhar(); }));
+      alvo.querySelector('#enviar-lote')?.addEventListener('click', enviarTodos);
+    }
+
+    async function enviarTodos() {
+      // Um por vez: cada PDF tem o texto extraído no servidor.
+      for (const l of linhas.filter(x => x.estado === 'pronto' && x.usina)) {
+        l.estado = 'enviando';
+        desenhar();
+        const fd = new FormData();
+        fd.append('arquivo', l.arquivo);
+        fd.append('tipo', l.tipo);
+        fd.append('vigencia', l.vigencia);
+        fd.append('titulo', `${{ ACT: 'Acordo Coletivo', Aditivo: 'Termo Aditivo', Outro: 'Documento' }[l.tipo]} ${l.vigencia}`.trim());
+        try {
+          l.res = await api(`/api/usinas/${l.usina}/documentos`, { method: 'POST', body: fd });
+          l.estado = 'ok';
+        } catch (err) { l.estado = 'erro'; l.erro = err.message; }
+        desenhar();
+      }
+      await App.carregarDados();
+      desenhar();
+      const ok = linhas.filter(l => l.estado === 'ok').length, erros = linhas.filter(l => l.estado === 'erro').length;
+      toast(erros ? `${ok} enviado(s), ${erros} com erro — veja a lista.` : `${ok} PDF(s) enviados ✓`, erros ? 'erro' : '');
+    }
   }
 
   // ---------- histórico ----------
