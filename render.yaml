@@ -1,0 +1,28 @@
+# Blueprint do Render (render.com → New → Blueprint → este repositório).
+# Plano Starter + disco persistente: banco, PDFs dos acordos e usuários sobrevivem a reinícios e deploys.
+services:
+  - type: web
+    name: act-ambar
+    runtime: node
+    plan: starter
+    region: virginia
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    disk:
+      name: dados
+      mountPath: /var/data
+      sizeGB: 2
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATA_DIR
+        value: /var/data
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_SENHA
+        sync: false

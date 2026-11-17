@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acordos Coletivos · Âmbar Energia</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body class="app">
+  <header class="barra">
+    <a class="logo claro" href="#/panorama" aria-label="Âmbar Energia · início"><b>Âmbar</b><small>ENERGIA</small></a>
+    <span class="barra-produto">Acordos Coletivos</span>
+    <nav class="abas" aria-label="Seções">
+      <a href="#/panorama" data-aba="panorama">Panorama</a>
+      <a href="#/comparativo" data-aba="comparativo">Comparativo</a>
+      <a href="#/usina" data-aba="usina">Usinas</a>
+      <a href="#/busca" data-aba="busca">Busca nos acordos</a>
+      <a href="#/admin" data-aba="admin" id="aba-admin" hidden>Administração</a>
+    </nav>
+    <div class="busca-global" id="busca-global">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="busca-global-campo" type="search" placeholder="Usina, benefício ou texto…" autocomplete="off" aria-label="Busca rápida" aria-controls="busca-global-lista">
+      <kbd>Ctrl K</kbd>
+      <div class="busca-global-lista" id="busca-global-lista" role="listbox" hidden></div>
+    </div>
+    <div class="usuario">
+      <button class="usuario-botao" id="usuario-botao" aria-haspopup="menu" aria-expanded="false"><span class="avatar" id="avatar"></span></button>
+      <div class="usuario-menu" id="usuario-menu" role="menu" hidden>
+        <div class="usuario-info"><strong id="usuario-nome"></strong><span id="usuario-email"></span><span class="papel" id="usuario-papel"></span></div>
+        <button role="menuitem" id="menu-senha">Trocar minha senha</button>
+        <button role="menuitem" id="menu-sair">Sair</button>
+      </div>
+    </div>
+    <svg class="barra-onda" viewBox="0 0 1200 14" preserveAspectRatio="none" aria-hidden="true"><path d="M0 9C220 1 420 13 640 7S1000 1 1200 6" fill="none" stroke="#ec6b24" stroke-width="2"/></svg>
+  </header>
+
+  <main id="vista" class="vista" tabindex="-1"><p class="carregando">Carregando…</p></main>
+
+  <!-- Gaveta lateral: detalhe de um valor (usina × item) -->
+  <aside class="gaveta" id="gaveta" aria-hidden="true" aria-labelledby="gaveta-titulo">
+    <div class="gaveta-cab">
+      <div>
+        <span class="sobre" id="gaveta-sobre"></span>
+        <h2 id="gaveta-titulo"></h2>
+      </div>
+      <button class="btn btn-fantasma btn-sm" id="gaveta-fechar" aria-label="Fechar">✕</button>
+    </div>
+    <div class="gaveta-corpo" id="gaveta-corpo"></div>
+  </aside>
+  <div class="veu" id="veu" hidden></div>
+
+  <dialog class="modal" id="modal-senha">
+    <form method="dialog" id="form-senha" class="modal-form">
+      <h2>Crie sua senha</h2>
+      <p class="sub" id="senha-sub">Escolha uma senha pessoal com pelo menos 8 caracteres.</p>
+      <label class="rotulo">Senha atual <small id="senha-atual-dica">(a senha provisória que você recebeu)</small>
+        <input class="campo" type="password" name="atual" autocomplete="current-password" required>
+      </label>
+      <label class="rotulo">Nova senha
+        <input class="campo" type="password" name="nova" autocomplete="new-password" minlength="8" required>
+      </label>
+      <label class="rotulo">Repita a nova senha
+        <input class="campo" type="password" name="nova2" autocomplete="new-password" minlength="8" required>
+      </label>
+      <p class="msg" id="senha-msg" role="alert"></p>
+      <div class="modal-acoes">
+        <button class="btn btn-claro" type="button" id="senha-cancelar">Cancelar</button>
+        <button class="btn btn-laranja" type="submit">Salvar senha</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal" id="modal"><div id="modal-conteudo"></div></dialog>
+
+  <script src="vendor/xlsx.full.min.js" defer></script>
+  <script src="lib/clausulas.js"></script>
+  <script src="lib/planilha.js"></script>
+  <script src="js/comum.js"></script>
+  <script src="js/visualizador.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>

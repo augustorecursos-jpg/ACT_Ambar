@@ -1,0 +1,79 @@
+/* Identidade visual · Âmbar Energia (azul-marinho + laranja sobre fundo claro) — mesmas cores da Trilha DHO */
+:root {
+  --marinho: #0e3b5c;
+  --marinho-2: #164d74;
+  --marinho-escuro: #0a2c45;
+  --marinho-suave: #e8eff5;
+  --laranja: #ec6b24;
+  --laranja-claro: #f39a4a;
+  --laranja-suave: #fdf0e7;
+  --fundo: #f4f6f8;
+  --fundo-2: #eaeef2;
+  --branco: #ffffff;
+  --linha: #dfe5eb;
+  --linha-forte: #c9d3dc;
+  --texto: #1d2b36;
+  --texto-suave: #5f6f7c;
+  --texto-fraco: #8a98a4;
+  --verde: #1f9d57;
+  --verde-suave: #e6f5ec;
+  --vermelho: #d93a2b;
+  --vermelho-suave: #fbeae8;
+  --raio: 14px;
+  --raio-sm: 9px;
+  --sombra: 0 12px 32px -16px rgba(14, 59, 92, .28);
+  --sombra-forte: 0 24px 60px -24px rgba(10, 44, 69, .45);
+  --fonte: 'Nunito Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --fonte-titulo: 'Montserrat', 'Nunito Sans', system-ui, sans-serif;
+  --mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; font-family: var(--fonte); color: var(--texto); background: var(--fundo); -webkit-font-smoothing: antialiased; }
+h1, h2, h3, h4 { font-family: var(--fonte-titulo); margin: 0; color: var(--marinho); }
+a { color: inherit; }
+button { font: inherit; cursor: pointer; color: inherit; }
+input, select, textarea { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--laranja); outline-offset: 2px; }
+
+.logo { display: inline-flex; flex-direction: column; line-height: .95; text-decoration: none; }
+.logo b { font-family: var(--fonte-titulo); font-weight: 600; font-size: 1.55rem; color: var(--marinho); letter-spacing: -.01em; }
+.logo small { font-family: var(--fonte-titulo); font-weight: 700; font-size: .6rem; letter-spacing: .12em; color: var(--laranja); margin-left: 2px; }
+.logo.claro b { color: #fff; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
+  border: 0; border-radius: 10px; padding: .7rem 1.2rem; font-weight: 700; font-size: .92rem;
+  text-decoration: none; transition: transform .15s ease, box-shadow .15s ease, background .15s, border-color .15s; white-space: nowrap;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+.btn-laranja { background: var(--laranja); color: #fff; box-shadow: 0 10px 22px -12px rgba(236, 107, 36, .9); }
+.btn-laranja:hover { background: #d95d18; }
+.btn-marinho { background: var(--marinho); color: #fff; }
+.btn-marinho:hover { background: var(--marinho-2); }
+.btn-claro { background: #fff; color: var(--marinho); border: 1px solid var(--linha); }
+.btn-claro:hover { border-color: var(--marinho); }
+.btn-perigo { background: #fff; color: var(--vermelho); border: 1px solid #f3c7c2; }
+.btn-perigo:hover { border-color: var(--vermelho); }
+.btn-fantasma { background: transparent; color: var(--marinho); padding-inline: .7rem; }
+.btn-fantasma:hover { background: var(--marinho-suave); transform: none; }
+.btn-sm { padding: .42rem .8rem; font-size: .82rem; border-radius: 8px; }
+
+.campo {
+  width: 100%; padding: .65rem .85rem; border-radius: var(--raio-sm); border: 1px solid var(--linha-forte);
+  background: #fff; outline: none; transition: border-color .15s, box-shadow .15s;
+}
+.campo:focus { border-color: var(--marinho); box-shadow: 0 0 0 3px rgba(14, 59, 92, .14); }
+textarea.campo { resize: vertical; min-height: 90px; line-height: 1.5; }
+label.rotulo { display: grid; gap: .35rem; font-size: .8rem; font-weight: 700; color: var(--marinho); }
+label.rotulo small { font-weight: 400; color: var(--texto-suave); }
+
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); opacity: 0;
+  background: var(--marinho); color: #fff; padding: .8rem 1.2rem; border-radius: 10px; z-index: 200;
+  box-shadow: var(--sombra); transition: all .25s ease; pointer-events: none; max-width: calc(100% - 32px);
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.erro { background: var(--vermelho); }

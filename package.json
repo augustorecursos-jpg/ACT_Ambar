@@ -1,0 +1,21 @@
+{
+  "name": "ambar-act",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Painel de Acordos Coletivos de Trabalho por usina - Âmbar Energia / RH",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "dev": "node --no-warnings --watch server.js",
+    "importar": "node --no-warnings scripts/importar.js",
+    "test": "node --no-warnings --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "multer": "^2.5.0",
+    "pdfjs-dist": "^4.10.38"
+  }
+}
