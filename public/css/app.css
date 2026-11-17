@@ -264,17 +264,19 @@ a.ev:hover { filter: brightness(.97); border-color: var(--marinho); }
 .rk-outro { display: flex; justify-content: space-between; gap: 1rem; width: 100%; border: 0; background: var(--fundo); padding: .55rem .8rem; border-radius: 10px; font-size: .88rem; text-align: left; }
 .rk-outro span { font-weight: 700; color: var(--marinho); }
 .rk-outro b.vazio { color: var(--texto-fraco); font-weight: 600; }
-.grupos { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .9rem; }
-.grupo-resp { border: 1px solid var(--linha); border-radius: 16px; padding: 1rem 1.1rem; display: grid; gap: .6rem; align-content: start; }
+.grupos { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: .9rem; }
+.grupo-resp { min-width: 0; overflow: hidden; border: 1px solid var(--linha); border-radius: 16px; padding: 1rem 1.1rem; display: grid; gap: .6rem; align-content: start; }
 .grupo-resp.vazio { background: var(--fundo); border-style: dashed; }
-.gr-cab { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; }
+.gr-cab { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; min-width: 0; }
+.gr-cab b { min-width: 0; overflow-wrap: anywhere; }
 .gr-cab b { font: 800 1.08rem var(--fonte-titulo); color: var(--marinho); line-height: 1.25; }
 .grupo-resp.vazio .gr-cab b { color: var(--texto-suave); font-size: .92rem; }
 .gr-n { flex: none; font-size: .76rem; font-weight: 800; color: var(--texto-suave); background: var(--fundo-2); padding: .15rem .5rem; border-radius: 999px; }
 .gr-barra { display: block; height: 6px; background: var(--fundo-2); border-radius: 6px; overflow: hidden; }
 .gr-barra i { display: block; height: 100%; background: var(--marinho-2); border-radius: 6px; }
 .grupo-resp ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .35rem; }
-.grupo-resp li { display: inline-flex; align-items: center; gap: .25rem; background: #fff; border: 1px solid var(--linha); border-radius: 999px; padding: .15rem .25rem .15rem .2rem; }
+.grupo-resp li { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .25rem; max-width: 100%; min-width: 0; background: #fff; border: 1px solid var(--linha); border-radius: 14px; padding: .2rem .3rem .2rem .2rem; }
+.grupo-resp li .chip-ref { max-width: 100%; white-space: normal; }
 .grupo-resp li button { border: 0; background: none; font-size: .82rem; font-weight: 700; color: var(--marinho); padding: .15rem .4rem; border-radius: 999px; }
 .grupo-resp li button:hover { background: var(--marinho-suave); }
 .cp-dica { margin: 1.6rem 0 0; font-size: .8rem; color: var(--texto-fraco); border-top: 1px dashed var(--linha); padding-top: .8rem; }
