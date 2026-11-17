@@ -71,18 +71,33 @@ function senhaProvisoria() {
   return `${s.slice(0, 4)}-${s.slice(4, 8)}-${s.slice(8, 12)}`;
 }
 
-// Primeiro acesso: cria o administrador inicial a partir das variáveis de ambiente.
-if (!db.prepare('SELECT COUNT(*) AS n FROM usuarios').get().n) {
-  const email = process.env.ADMIN_EMAIL || (PRODUCAO ? null : 'admin@ambar.local');
-  const senha = process.env.ADMIN_SENHA || process.env.ADMIN_PASSWORD || (PRODUCAO ? null : 'ambar-act');
-  if (!email || !senha) {
+// Administrador a partir das variáveis de ambiente (ADMIN_EMAIL / ADMIN_SENHA):
+// - banco sem usuários, ou nenhum usuário com esse e-mail: cria o administrador;
+// - ADMIN_REDEFINIR=sim: redefine a senha desse administrador para ADMIN_SENHA (recuperação de acesso).
+//   Depois de entrar, remova ADMIN_REDEFINIR no Render para a senha não voltar a cada reinício.
+{
+  const email = (process.env.ADMIN_EMAIL || (PRODUCAO ? '' : 'admin@ambar.local')).trim().toLowerCase();
+  // trim: o campo de valor do Render é uma caixa de texto e pode guardar espaço ou quebra de linha no fim.
+  const senha = (process.env.ADMIN_SENHA || process.env.ADMIN_PASSWORD || (PRODUCAO ? '' : 'ambar-act')).trim();
+  const total = db.prepare('SELECT COUNT(*) AS n FROM usuarios').get().n;
+  if (!total && (!email || !senha)) {
     console.error('[erro] Nenhum usuário cadastrado. Defina ADMIN_EMAIL e ADMIN_SENHA para criar o administrador inicial.');
     process.exit(1);
   }
-  db.prepare("INSERT INTO usuarios (nome, email, senha_hash, papel, trocar_senha) VALUES ('Administrador', ?, ?, 'admin', 0)")
-    .run(email.trim().toLowerCase(), hashSenha(senha));
-  console.log(`[info] Administrador inicial criado: ${email}`);
-  if (!process.env.ADMIN_SENHA && !process.env.ADMIN_PASSWORD) console.warn('[aviso] Senha padrão de desenvolvimento "ambar-act". Não use em produção.');
+  if (email && senha) {
+    const existente = db.prepare('SELECT * FROM usuarios WHERE email = ?').get(email);
+    if (!existente) {
+      db.prepare("INSERT INTO usuarios (nome, email, senha_hash, papel, trocar_senha) VALUES ('Administrador', ?, ?, 'admin', 0)")
+        .run(email, hashSenha(senha));
+      console.log(`[info] Administrador criado a partir de ADMIN_EMAIL: ${email}`);
+    } else if (/^(sim|1|true)$/i.test(String(process.env.ADMIN_REDEFINIR || '').trim())) {
+      db.prepare("UPDATE usuarios SET senha_hash = ?, papel = 'admin', ativo = 1, trocar_senha = 0, versao_sessao = versao_sessao + 1 WHERE id = ?")
+        .run(hashSenha(senha), existente.id);
+      console.warn(`[aviso] ADMIN_REDEFINIR: senha de ${email} redefinida para o valor de ADMIN_SENHA. Remova ADMIN_REDEFINIR depois de entrar.`);
+    }
+  }
+  console.log(`[info] Usuários cadastrados: ${db.prepare('SELECT COUNT(*) AS n FROM usuarios').get().n} · administradores ativos: ${db.prepare("SELECT group_concat(email, ', ') AS e FROM usuarios WHERE papel = 'admin' AND ativo = 1").get().e || 'nenhum'}`);
+  if (!PRODUCAO && !process.env.ADMIN_SENHA && !process.env.ADMIN_PASSWORD) console.warn('[aviso] Senha padrão de desenvolvimento "ambar-act". Não use em produção.');
 }
 
 // ---------- app ----------
@@ -136,6 +151,8 @@ app.post('/api/entrar', (req, res) => {
   const senha = String(req.body?.senha || '');
   const u = db.prepare('SELECT * FROM usuarios WHERE email = ?').get(email);
   if (!u || !u.ativo || !conferirSenha(senha, u.senha_hash)) {
+    // Motivo só no log do servidor (nunca a senha), para diagnosticar acessos negados.
+    console.warn(`[login] negado para ${email || '(vazio)'}: ${!u ? 'e-mail não cadastrado' : !u.ativo ? 'usuário desativado' : 'senha incorreta'}`);
     const atual = f && f.ate > Date.now() ? f : { n: 0 };
     falhas.set(ip, { n: atual.n + 1, ate: Date.now() + 15 * 60e3 });
     return erro(res, 401, 'E-mail ou senha incorretos.');

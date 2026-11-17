@@ -70,7 +70,8 @@ npm test           # testes do leitor de cláusulas e da planilha
 
 | Variável | Para quê | Padrão |
 |---|---|---|
-| `ADMIN_EMAIL` / `ADMIN_SENHA` | Administrador criado no primeiro início (banco sem usuários) | em desenvolvimento: `admin@ambar.local` / `ambar-act` |
+| `ADMIN_EMAIL` / `ADMIN_SENHA` | Administrador criado ao iniciar, se ainda não existir usuário com esse e-mail | em desenvolvimento: `admin@ambar.local` / `ambar-act` |
+| `ADMIN_REDEFINIR=sim` | Recuperação de acesso: a cada início, redefine a senha de `ADMIN_EMAIL` para `ADMIN_SENHA`. **Remova depois de entrar.** | – |
 | `DATA_DIR` | Pasta do banco (`act.db`) e dos PDFs (`acordos/`) | `./data` |
 | `SESSION_SECRET` | Chave dos cookies de sessão | gerada e salva em `DATA_DIR` |
 | `PORT` | Porta HTTP | `3000` |
